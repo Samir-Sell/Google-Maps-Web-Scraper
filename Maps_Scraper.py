@@ -1,8 +1,49 @@
 #import required packages
 import pandas as pd
+import geopandas as gpd
 import requests
 import json
+import shapely
+import fiona
+from pyproj import Proj, transform, Transformer
+from sqlalchemy import create_engine
+import psycopg2
+import geoalchemy2
 
+
+def postgis_push(spatial_df):
+
+    '''
+    A function to set the correct srid and then push the data to a local postgis server
+    '''
+    #defines a crs
+    projected_df = spatial_df.set_crs(epsg=4326)
+
+    #pushes data to db
+    db_connection_url = "postgres://postgres:postgres@localhost:5432/GMaps"
+    engine = create_engine(db_connection_url)
+    projected_df.to_postgis(name="projected_test", con=engine)
+
+def csv_to_point(non_spatial_data):
+
+    '''
+    Use the merged non-spatial DF to create a geopandas DF with point shapefiles from the lat/lng data
+    '''
+
+    #build the geodataframe and export it as a pointfile
+    del non_spatial_data['Tags']
+    spatial_df = gpd.GeoDataFrame(non_spatial_data, geometry=gpd.points_from_xy(non_spatial_data.Longitude, non_spatial_data.Latitude))
+    spatial_df.to_csv("point_data.csv")
+    print(spatial_df)
+    spatial_df.to_file("point_data.shp")
+
+    #create a projection file that corresponds to where data was taken from
+    prj = open("point_data.prj", "w")
+    epsg = 'GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["Degree",0.017453292519943295]]'
+    prj.write(epsg)
+    prj.close()
+
+    return(spatial_df)
 
 def find_locations(search_url, api_key):
 
@@ -88,10 +129,14 @@ def join_data(details_df,location_df):
 
     final_sheet.to_csv("bakery.csv")
 
+    print(final_sheet)
+
+    return final_sheet
+
     
 def main():
     #assigning Parameters for location searching
-    api_key = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+    api_key = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
     keywords = ['bakery']
     search_radius = '10000'
     coords = '45.415488,-75.697123'
@@ -104,7 +149,12 @@ def main():
     details_df = find_details(final_data, api_key)
 
     #join both dataframes together to have a final product
-    join_data(details_df,location_df)
+    non_spatial_data = join_data(details_df,location_df)
+
+    #c
+    spatial_df = csv_to_point(non_spatial_data)
+
+    postgis_push(spatial_df)
 
 
 
